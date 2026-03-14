@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.0...v1.0.1) (2026-03-14)
+
+
+### Bug Fixes
+
+* move local feature inside .devcontainer for correct path resolution ([ad54734](https://github.com/ourPLCC/plcc-devcontainer/commit/ad547349dab98c7a51dfc4d94d027cf754663308))
+
 # 1.0.0 (2026-03-14)
 
 
