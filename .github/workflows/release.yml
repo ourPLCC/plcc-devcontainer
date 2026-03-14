@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run semantic-release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Read PLCC version
+        if: steps.semantic.outputs.new_release_published == 'true'
+        id: plcc_version
+        run: |
+          echo "version=$(jq -r '.features["./features/plcc"].version' .devcontainer/devcontainer.json)" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Build devcontainer image
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/ourplcc/plcc-devcontainer:${{ steps.semantic.outputs.new_release_version }}
+          push: always
+          runCmd: bash test/test-env.sh
+
+      - name: Apply OCI labels and push all tags
+        if: steps.semantic.outputs.new_release_published == 'true'
+        # Note: pulls the just-pushed image from GHCR to add labels, then re-pushes
+        # with all floating tags. The labeled image is a thin wrapper over the
+        # smoke-tested image — functionally identical.
+        env:
+          VERSION: ${{ steps.semantic.outputs.new_release_version }}
+          PLCC_VERSION: ${{ steps.plcc_version.outputs.version }}
+        run: |
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
+          BASE_IMAGE="ghcr.io/ourplcc/plcc-devcontainer:$VERSION"
+          REPO="https://github.com/ourPLCC/plcc-devcontainer"
+
+          printf 'FROM %s\nLABEL org.opencontainers.image.version="%s"\nLABEL org.opencontainers.image.source="%s"\nLABEL org.opencontainers.image.description="%s"\nLABEL org.opencontainers.image.licenses="%s"\nLABEL org.plcc.version="%s"\n' \
+            "$BASE_IMAGE" "$VERSION" "$REPO" \
+            "Prebuilt devcontainer image with PLCC, Java, and Python" \
+            "MIT" "$PLCC_VERSION" \
+            > Dockerfile.labels
+
+          docker buildx build \
+            -f Dockerfile.labels \
+            -t "ghcr.io/ourplcc/plcc-devcontainer:$VERSION" \
+            -t "ghcr.io/ourplcc/plcc-devcontainer:$MAJOR" \
+            -t "ghcr.io/ourplcc/plcc-devcontainer:$MAJOR_MINOR" \
+            -t "ghcr.io/ourplcc/plcc-devcontainer:latest" \
+            --push .
