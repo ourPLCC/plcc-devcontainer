@@ -1,0 +1,16 @@
+{
+  "id": "plcc",
+  "version": "1.0.0",
+  "name": "PLCC",
+  "description": "Installs PLCC (Programming Language Compiler Compiler)",
+  "options": {
+    "version": {
+      "type": "string",
+      "default": "latest",
+      "description": "Git tag of PLCC to install, using the v-prefixed format (e.g. 'v8.0.2'). Use 'latest' for the HEAD of the default branch."
+    }
+  },
+  "containerEnv": {
+    "PATH": "/usr/local/lib/plcc/src/plcc/bin:${PATH}"
+  }
+}
