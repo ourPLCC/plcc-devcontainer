@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.1...v1.0.2) (2026-03-14)
+
+
+### Bug Fixes
+
+* separate imageName and imageTag for devcontainers/ci action ([4ca5215](https://github.com/ourPLCC/plcc-devcontainer/commit/4ca5215020028a58130d74a9b691ccee9ac77c61))
+
 ## [1.0.1](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.0...v1.0.1) (2026-03-14)
 
 
