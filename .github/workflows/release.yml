@@ -40,31 +40,29 @@ jobs:
           echo "version=$(jq -r '.features["./features/plcc"].version' .devcontainer/devcontainer.json)" \
             >> "$GITHUB_OUTPUT"
 
-      - name: Build devcontainer image
+      - name: Build and test devcontainer image
         if: steps.semantic.outputs.new_release_published == 'true'
         uses: devcontainers/ci@v0.3
         with:
           imageName: ghcr.io/ourplcc/plcc-devcontainer
-          imageTag: ${{ steps.semantic.outputs.new_release_version }}
-          push: always
+          push: never
           runCmd: bash test/test-env.sh
 
       - name: Apply OCI labels and push all tags
         if: steps.semantic.outputs.new_release_published == 'true'
-        # Note: pulls the just-pushed image from GHCR to add labels, then re-pushes
-        # with all floating tags. The labeled image is a thin wrapper over the
-        # smoke-tested image — functionally identical.
+        # devcontainers/ci built the image locally as ghcr.io/ourplcc/plcc-devcontainer:latest.
+        # We re-tag it with OCI labels and push with all floating version tags.
         env:
           VERSION: ${{ steps.semantic.outputs.new_release_version }}
           PLCC_VERSION: ${{ steps.plcc_version.outputs.version }}
         run: |
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1-2)
-          BASE_IMAGE="ghcr.io/ourplcc/plcc-devcontainer:$VERSION"
           REPO="https://github.com/ourPLCC/plcc-devcontainer"
 
           printf 'FROM %s\nLABEL org.opencontainers.image.version="%s"\nLABEL org.opencontainers.image.source="%s"\nLABEL org.opencontainers.image.description="%s"\nLABEL org.opencontainers.image.licenses="%s"\nLABEL org.plcc.version="%s"\n' \
-            "$BASE_IMAGE" "$VERSION" "$REPO" \
+            "ghcr.io/ourplcc/plcc-devcontainer:latest" \
+            "$VERSION" "$REPO" \
             "Prebuilt devcontainer image with PLCC, Java, and Python" \
             "MIT" "$PLCC_VERSION" \
             > Dockerfile.labels

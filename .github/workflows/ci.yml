@@ -23,12 +23,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build devcontainer image
+      - name: Build and test devcontainer image
         uses: devcontainers/ci@v0.3
         with:
           imageName: ghcr.io/ourplcc/plcc-devcontainer
-          imageTag: pr-${{ github.event.pull_request.number }}
-          push: always
+          push: never
           runCmd: bash test/test-env.sh
 
       - name: Read PLCC version
@@ -37,13 +36,13 @@ jobs:
           echo "version=$(jq -r '.features["./features/plcc"].version' .devcontainer/devcontainer.json)" \
             >> "$GITHUB_OUTPUT"
 
-      - name: Apply OCI labels
-        # Note: this step pulls the PR image from GHCR (just pushed above) and re-pushes
-        # with labels added. The labeled image is a thin wrapper — functionally identical
-        # to the image that passed the smoke test.
+      - name: Apply OCI labels and push PR image
+        # devcontainers/ci built the image locally as ghcr.io/ourplcc/plcc-devcontainer:latest.
+        # We re-tag it with OCI labels and push as the PR-specific tag.
         run: |
+          PR_TAG="ghcr.io/ourplcc/plcc-devcontainer:pr-${{ github.event.pull_request.number }}"
           printf 'FROM %s\nLABEL org.opencontainers.image.source="%s"\nLABEL org.opencontainers.image.description="%s"\nLABEL org.opencontainers.image.licenses="%s"\nLABEL org.plcc.version="%s"\n' \
-            "ghcr.io/ourplcc/plcc-devcontainer:pr-${{ github.event.pull_request.number }}" \
+            "ghcr.io/ourplcc/plcc-devcontainer:latest" \
             "https://github.com/ourPLCC/plcc-devcontainer" \
             "Prebuilt devcontainer image with PLCC, Java, and Python" \
             "MIT" \
@@ -51,7 +50,7 @@ jobs:
             > Dockerfile.labels
           docker buildx build \
             -f Dockerfile.labels \
-            -t "ghcr.io/ourplcc/plcc-devcontainer:pr-${{ github.event.pull_request.number }}" \
+            -t "$PR_TAG" \
             --push .
 
       - name: Comment image tag on PR
