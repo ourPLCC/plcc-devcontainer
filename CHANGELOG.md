@@ -1,3 +1,11 @@
+## [1.0.4](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.3...v1.0.4) (2026-03-14)
+
+
+### Bug Fixes
+
+* move TODO comment above MIT line to preserve shell line continuation ([54755e8](https://github.com/ourPLCC/plcc-devcontainer/commit/54755e87931b7c358f50628f606cee7bd6ca2275))
+* move TODO comment outside printf argument list ([2770553](https://github.com/ourPLCC/plcc-devcontainer/commit/27705534f9e960ab2216a1424c5e689edabf8b85))
+
 ## [1.0.3](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.2...v1.0.3) (2026-03-14)
 
 
