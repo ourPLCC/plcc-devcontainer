@@ -6,15 +6,16 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  packages: write
-  pull-requests: write
-  issues: write
+# These grants applied to GITHUB_TOKEN, which semantic-release no longer
+# uses — it authenticates with the App token now. The only remaining use of
+# GITHUB_TOKEN is the GHCR login, so packages:write is all that is needed.
+permissions: {}
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       # A static PAT rots silently: this one expired and only surfaced months
       # later, failing checkout on the next push to main. App installation

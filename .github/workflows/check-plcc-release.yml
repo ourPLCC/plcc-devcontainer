@@ -7,13 +7,14 @@ on:
     - cron: '0 9 * * 1'   # Every Monday at 09:00 UTC
   workflow_dispatch:        # Allow manual trigger for testing
 
-permissions:
-  contents: write
-  pull-requests: write
+# Nothing here uses GITHUB_TOKEN any more: checkout and gh both authenticate
+# with the App installation token, so GITHUB_TOKEN needs no scopes at all.
+permissions: {}
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       # Minted per run and short-lived, so it cannot go stale between the
       # weekly runs this workflow depends on.

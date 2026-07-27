@@ -50,7 +50,17 @@ Commands available: `plccmk`, `scan`, `parse`, `rep`
 Use [Conventional Commits](https://www.conventionalcommits.org/) in your commit messages:
 - `fix:` — patch release
 - `feat:` — minor release
-- `feat!:` or `BREAKING CHANGE:` — major release
+- `feat:` **with a `BREAKING CHANGE:` footer** — major release
+- `ci:`, `docs:`, `chore:`, `test:`, `refactor:` — no release
+
+Write the footer, not `feat!:`. semantic-release uses the Angular preset,
+which does not parse the `!` shorthand: a `feat!:` subject with no footer
+matches nothing and produces **no release at all**, which is easy to miss
+because the pipeline still goes green. The `BREAKING CHANGE:` footer is what
+actually triggers a major.
+
+If you squash-merge a major, make sure the footer survives into the squash
+commit body — with it dropped, the release silently downgrades to a minor.
 
 ### Automated PLCC updates
 
@@ -58,4 +68,11 @@ A weekly workflow checks for new PLCC releases and opens a PR automatically. If 
 
 ### Release setup
 
-The release workflow requires a `RELEASE_TOKEN` repository secret with a GitHub App token (preferred) or a classic PAT. Classic PAT scopes required: `repo`, `write:packages`. This is required because `GITHUB_TOKEN` cannot push to the protected `main` branch.
+The release and PLCC-update workflows need two repository secrets, `APP_ID` and `APP_PRIVATE_KEY`, belonging to the **ourPLCC Release Bot** GitHub App. Each run mints its own short-lived installation token. This is required because `GITHUB_TOKEN` cannot push to the protected `main` branch.
+
+The App also needs, per repository:
+- Contents and Pull requests set to **Read and write**
+- Installation access granted to this repository — org-level installation does not cover new repos automatically
+- A place in the `main` ruleset's bypass list, which only becomes selectable once repository access is granted
+
+An earlier setup used a static `RELEASE_TOKEN` PAT. That is no longer referenced by any workflow and can be deleted. It is worth knowing why it was replaced: a PAT gives no expiry signal, so when it lapsed nothing surfaced until the next push to main failed at checkout, months later.
