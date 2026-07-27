@@ -34,7 +34,35 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
+      # On main the only reason to build is to feed a release — CI already
+      # verified the code on the PR. Infra-only merges (ci:, docs:, chore:)
+      # release nothing, so building them spends minutes to produce an image
+      # that is then thrown away. Ask semantic-release first; this publishes
+      # nothing.
+      #
+      # Path filtering cannot answer this: a releasing commit that touches
+      # only docs would skip the build and then have no image to publish.
+      # The release decision is what matters, not the diff.
+      - name: Would this commit release? (dry run)
+        id: plan
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          dry_run: true
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Report plan
+        run: |
+          echo "will_release=${{ steps.plan.outputs.new_release_published }}"
+          echo "version=${{ steps.plan.outputs.new_release_version }}"
+
+      # Guarded with != 'false' rather than == 'true' so an empty or
+      # unexpected output still builds. Skipping a build that a release needs
+      # would leave the publish step with no image; an extra build only costs
+      # time. The build still precedes the real release, so a broken image
+      # cannot be published.
       - name: Log in to GHCR
+        if: steps.plan.outputs.new_release_published != 'false'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -42,6 +70,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and test devcontainer image
+        if: steps.plan.outputs.new_release_published != 'false'
         uses: devcontainers/ci@v0.3
         with:
           imageName: ghcr.io/ourplcc/plcc-devcontainer
@@ -53,6 +82,17 @@ jobs:
         uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # The two runs see the same commits and should never disagree, but if
+      # they did the consequence would be silent and bad: no image was built,
+      # and the publish step's `FROM ...:latest` would pull the *previous*
+      # release's image and push it under the new version tags. Fail loudly
+      # instead of shipping stale content under a fresh version.
+      - name: Fail if the dry run and the real release disagreed
+        if: steps.semantic.outputs.new_release_published == 'true' && steps.plan.outputs.new_release_published == 'false'
+        run: |
+          echo "::error::semantic-release published ${{ steps.semantic.outputs.new_release_version }}, but the dry run predicted no release, so no image was built. Refusing to publish."
+          exit 1
 
       - name: Read PLCC version
         if: steps.semantic.outputs.new_release_published == 'true'
