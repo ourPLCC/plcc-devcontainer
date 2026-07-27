@@ -12,13 +12,56 @@ permissions:
   pull-requests: write
 
 jobs:
-  build:
+  # Every PR rebuilt the image, including ones touching only workflows or
+  # docs. This job classifies the diff; the expensive steps below are guarded
+  # on it. Note the jobs themselves still run and still post their checks —
+  # skipping a job leaves its check unreported, which is what hung PRs here
+  # before ci-gate existed.
+  changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # base..head diff needs both endpoints
+
+      - name: Detect changes that can affect the image
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # .devcontainer/ defines the image and the local plcc feature;
+          # test/ holds test-env.sh, which is the build's runCmd. The root
+          # devcontainer.json is the course template and is not built here.
+          # if/else, not `&&`, because this runs under bash -e.
+          if echo "$CHANGED" | grep -qE '^\.devcontainer/|^test/|^\.github/workflows/ci\.yml$'; then
+            IMAGE=true
+          else
+            IMAGE=false
+          fi
+
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "=> image build: $IMAGE"
+
+  build:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        if: needs.changes.outputs.image == 'true'
+        uses: actions/checkout@v4
 
       - name: Log in to GHCR
+        if: needs.changes.outputs.image == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -26,6 +69,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and test devcontainer image
+        if: needs.changes.outputs.image == 'true'
         uses: devcontainers/ci@v0.3
         with:
           imageName: ghcr.io/ourplcc/plcc-devcontainer
@@ -33,12 +77,14 @@ jobs:
           runCmd: bash test/test-env.sh
 
       - name: Read PLCC version
+        if: needs.changes.outputs.image == 'true'
         id: plcc_version
         run: |
           echo "version=$(jq -r '.features["./features/plcc"].version' .devcontainer/devcontainer.json)" \
             >> "$GITHUB_OUTPUT"
 
       - name: Apply OCI labels and push PR image
+        if: needs.changes.outputs.image == 'true'
         # devcontainers/ci built the image locally as ghcr.io/ourplcc/plcc-devcontainer:latest.
         # We re-tag it with OCI labels and push as the PR-specific tag.
         run: |
@@ -57,6 +103,8 @@ jobs:
             --push .
 
       - name: Comment image tag on PR
+        # No image was built, so there is no tag to advertise.
+        if: needs.changes.outputs.image == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -76,8 +124,8 @@ jobs:
   # `build` would fix it today but break again the moment that job gains a
   # matrix and its check becomes `build (x)`. This name never changes.
   ci-gate:
-    needs: [build]
-    # Must run even when build fails — without this the gate is itself
+    needs: [changes, build]
+    # Must run even when a dependency fails — without this the gate is itself
     # skipped on failure, reports nothing, and reproduces the same hang.
     if: always()
     runs-on: ubuntu-latest
@@ -85,13 +133,22 @@ jobs:
     steps:
       - name: Require all CI jobs to have succeeded
         env:
+          CHANGES: ${{ needs.changes.result }}
           BUILD: ${{ needs.build.result }}
         run: |
-          echo "build=$BUILD"
-          # Anything other than success — failure, cancelled, or skipped —
-          # must block the merge.
-          if [ "$BUILD" != "success" ]; then
-            echo "::error::CI did not fully succeed — build was '$BUILD'."
+          failed=0
+          for entry in "changes=$CHANGES" "build=$BUILD"; do
+            echo "$entry"
+            # Anything other than success — failure, cancelled, or skipped
+            # because an upstream job failed — must block the merge.
+            case "${entry#*=}" in
+              success) ;;
+              *) failed=1 ;;
+            esac
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::CI did not fully succeed — see the job results above."
             exit 1
           fi
           echo "All required CI jobs succeeded."
