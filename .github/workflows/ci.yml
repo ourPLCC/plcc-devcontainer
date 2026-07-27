@@ -66,3 +66,32 @@ jobs:
               repo: context.repo.repo,
               body: `🐳 **PR image built:** \`ghcr.io/ourplcc/plcc-devcontainer:pr-${{ github.event.pull_request.number }}\`\n\nTo test manually, update \`.devcontainer/devcontainer.json\` to use this image tag.`
             })
+
+  # The single check the ruleset should require.
+  #
+  # The ruleset previously required "CI" — this workflow's top-level name.
+  # Actions posts one check per job, never one named after the workflow, so
+  # that check was never reported and every PR hung on "Expected — waiting
+  # for status to be reported" while all real checks were green. Requiring
+  # `build` would fix it today but break again the moment that job gains a
+  # matrix and its check becomes `build (x)`. This name never changes.
+  ci-gate:
+    needs: [build]
+    # Must run even when build fails — without this the gate is itself
+    # skipped on failure, reports nothing, and reproduces the same hang.
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require all CI jobs to have succeeded
+        env:
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "build=$BUILD"
+          # Anything other than success — failure, cancelled, or skipped —
+          # must block the merge.
+          if [ "$BUILD" != "success" ]; then
+            echo "::error::CI did not fully succeed — build was '$BUILD'."
+            exit 1
+          fi
+          echo "All required CI jobs succeeded."
