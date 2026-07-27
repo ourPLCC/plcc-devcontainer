@@ -11,6 +11,13 @@ permissions:
   packages: write
   pull-requests: write
 
+# Pushing to an open PR otherwise leaves the previous run building and
+# pushing an image that is already superseded — two full image pushes to the
+# same GHCR package at once. Only the newest commit's result gates the merge.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Every PR rebuilt the image, including ones touching only workflows or
   # docs. This job classifies the diff; the expensive steps below are guarded
