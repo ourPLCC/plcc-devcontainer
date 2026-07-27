@@ -39,40 +39,83 @@ jobs:
 
           BRANCH="chore/update-plcc-${LATEST}"
 
-          # Check whether a PR branch already exists (idempotency guard)
-          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
-            echo "Branch '$BRANCH' already exists. PR already open."
+          # The image's major tag is the stability contract for courses, so a
+          # new PLCC major has to release the image as a major too. Otherwise a
+          # patch release would move :N onto a new major of the tool. Tags are
+          # v-prefixed, so strip it before comparing.
+          # Deliberately `feat:` and not `feat!:` — the Angular preset that
+          # semantic-release uses does not parse the `!` shorthand, so a
+          # `feat!:` subject whose BREAKING CHANGE footer went missing yields
+          # no release at all. `feat:` degrades to a minor instead.
+          if [ "$(echo "${LATEST#v}" | cut -d. -f1)" != "$(echo "${CURRENT#v}" | cut -d. -f1)" ]; then
+            COMMIT_SUBJECT="feat: update PLCC to ${LATEST}"
+            COMMIT_BODY="BREAKING CHANGE: PLCC ${LATEST} is a new major version (was ${CURRENT}). Images already published under the previous major tag keep PLCC ${CURRENT}; this release publishes under a new major tag."
+          else
+            COMMIT_SUBJECT="fix: update PLCC to ${LATEST}"
+            COMMIT_BODY=""
+          fi
+          echo "Release type: $COMMIT_SUBJECT"
+
+          # Idempotency guard: keyed on the PR, not the branch. A branch with no
+          # PR means an earlier run died between push and PR creation; that must
+          # be recoverable, not mistaken for work already done.
+          if [ -n "$(gh pr list --head "$BRANCH" --state all --json number --jq '.[].number')" ]; then
+            echo "A PR for '$BRANCH' already exists. No action needed."
             exit 0
           fi
 
-          # Create update branch
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            echo "Branch '$BRANCH' exists with no PR. Recovering by opening the PR."
+            # actions/checkout configures a single-branch refspec, so no
+            # origin/$BRANCH tracking ref exists here — use FETCH_HEAD.
+            git fetch --depth=1 origin "$BRANCH"
+            git checkout -B "$BRANCH" FETCH_HEAD
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git checkout -b "$BRANCH"
 
-          # Update the pinned PLCC version in devcontainer.json
-          jq --arg v "$LATEST" \
-            '.features["./features/plcc"].version = $v' \
-            .devcontainer/devcontainer.json > tmp.json
-          mv tmp.json .devcontainer/devcontainer.json
+            # Update the pinned PLCC version in devcontainer.json
+            jq --arg v "$LATEST" \
+              '.features["./features/plcc"].version = $v' \
+              .devcontainer/devcontainer.json > tmp.json
+            mv tmp.json .devcontainer/devcontainer.json
 
-          git add .devcontainer/devcontainer.json
-          git commit -m "fix: update PLCC to ${LATEST}"
+            git add .devcontainer/devcontainer.json
+            if [ -n "$COMMIT_BODY" ]; then
+              git commit -m "$COMMIT_SUBJECT" -m "$COMMIT_BODY"
+            else
+              git commit -m "$COMMIT_SUBJECT"
+            fi
 
-          # Push branch; treat push failure as no-op (race condition guard)
-          git push origin "$BRANCH" || {
-            echo "Push failed — branch may already exist. Exiting cleanly."
-            exit 0
-          }
+            # Push branch; treat push failure as no-op (race condition guard)
+            git push origin "$BRANCH" || {
+              echo "Push failed — concurrent run. Exiting cleanly."
+              exit 0
+            }
+          fi
 
-          # Open PR
-          gh pr create \
-            --title "fix: update PLCC to ${LATEST}" \
-            --label "automated" \
+          # The PR title becomes the squash-merge commit subject, so it carries
+          # the release type. The body carries the BREAKING CHANGE footer for
+          # the same reason — on a major, both are what semantic-release reads.
+          # Every line stays indented to the run block. A line at column 0 ends
+          # the YAML block scalar, which is what made this file unparseable and
+          # kept the workflow from ever running. YAML strips this indentation,
+          # so the body text itself is unaffected.
+          PR_URL=$(gh pr create \
+            --title "$COMMIT_SUBJECT" \
             --body "Automated update: PLCC has a new release (${LATEST}).
 
-CI will build and test the image on this PR. Merge if green — merging triggers the release workflow, which publishes a new versioned image automatically.
+          CI will build and test the image on this PR. Merge if green — merging triggers the release workflow, which publishes a new versioned image automatically.
 
-PLCC release: https://github.com/ourPLCC/plcc/releases/tag/${LATEST}" \
+          PLCC release: https://github.com/ourPLCC/plcc/releases/tag/${LATEST}
+
+          ${COMMIT_BODY}" \
             --base main \
-            --head "$BRANCH"
+            --head "$BRANCH")
+
+          echo "Opened $PR_URL"
+
+          # Cosmetic only — never fail the run over a missing label or scope.
+          gh pr edit "$PR_URL" --add-label automated \
+            || echo "::warning::Could not apply the 'automated' label to $PR_URL"
