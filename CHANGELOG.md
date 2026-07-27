@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.1.0...v1.1.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* update PLCC to v8.0.4 ([320f31c](https://github.com/ourPLCC/plcc-devcontainer/commit/320f31cb1752f5b5870c7658f51b5c41d55c91ce))
+
 # [1.1.0](https://github.com/ourPLCC/plcc-devcontainer/compare/v1.0.4...v1.1.0) (2026-05-30)
 
 
