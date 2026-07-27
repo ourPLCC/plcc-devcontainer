@@ -15,14 +15,23 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # Minted per run and short-lived, so it cannot go stale between the
+      # weekly runs this workflow depends on.
+      - name: Generate release bot token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Check for new PLCC release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # Fetch the latest PLCC release tag
           LATEST=$(gh api repos/ourPLCC/plcc/releases/latest --jq '.tag_name')
